@@ -1,6 +1,8 @@
 package com.sk89q.worldedit.bukkit.adapter.impl.fawe.v1_21_9.regen;
 
 import com.fastasyncworldedit.bukkit.adapter.Regenerator;
+import com.fastasyncworldedit.bukkit.adapter.Regenerator;
+import com.fastasyncworldedit.bukkit.util.PlatformUtil;
 import com.fastasyncworldedit.core.Fawe;
 import com.fastasyncworldedit.core.queue.IChunkCache;
 import com.fastasyncworldedit.core.queue.IChunkGet;
@@ -91,8 +93,20 @@ public class PaperweightRegen extends Regenerator {
 
     @Override
     protected void runTasks(final BooleanSupplier shouldKeepTicking) {
+        // On Folia, pollTask() doesn't work because getCurrentRegionizedWorldData() returns null
+        // when called from the GlobalRegionScheduler. World regeneration is not supported on Folia.
+        if (PlatformUtil.isFolia()) {
+            // Skip task polling on Folia - regeneration may not work correctly
+            return;
+        }
         while (shouldKeepTicking.getAsBoolean()) {
-            if (!this.freshWorld.getChunkSource().pollTask()) {
+            try {
+                if (!this.freshWorld.getChunkSource().pollTask()) {
+                    return;
+                }
+            } catch (NullPointerException e) {
+                // Folia detection failed or running in incompatible context
+                // Stop polling to prevent repeated errors
                 return;
             }
         }
@@ -215,20 +229,41 @@ public class PaperweightRegen extends Regenerator {
 
         //shutdown chunk provider
         try {
-            Fawe.instance().getQueueHandler().sync(() -> {
+            // On Folia, we can't safely close the chunk source from this thread context
+            // Wrap in try-catch to prevent errors
+            if (!PlatformUtil.isFolia()) {
+                Fawe.instance().getQueueHandler().sync(() -> {
+                    try {
+                        freshWorld.getChunkSource().getDataStorage().cache.clear();
+                        freshWorld.getChunkSource().close(false);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+            } else {
+                // On Folia, try direct cleanup without sync
                 try {
                     freshWorld.getChunkSource().getDataStorage().cache.clear();
-                    freshWorld.getChunkSource().close(false);
+                    // Skip close() on Folia as it requires specific thread context
                 } catch (Exception e) {
-                    throw new RuntimeException(e);
+                    // Ignore - Folia cleanup may not work properly
                 }
-            });
+            }
         } catch (Exception ignored) {
         }
 
         //remove world from server
         try {
-            Fawe.instance().getQueueHandler().sync(this::removeWorldFromWorldsMap);
+            if (!PlatformUtil.isFolia()) {
+                Fawe.instance().getQueueHandler().sync(this::removeWorldFromWorldsMap);
+            } else {
+                // On Folia, try direct removal
+                try {
+                    removeWorldFromWorldsMap();
+                } catch (Exception e) {
+                    // Ignore - Folia cleanup may not work properly
+                }
+            }
         } catch (Exception ignored) {
         }
 

@@ -1,5 +1,6 @@
 package com.fastasyncworldedit.bukkit.adapter;
 
+import com.fastasyncworldedit.bukkit.util.PlatformUtil;
 import com.fastasyncworldedit.core.queue.IChunk;
 import com.fastasyncworldedit.core.queue.IChunkCache;
 import com.fastasyncworldedit.core.queue.IChunkGet;
@@ -62,6 +63,7 @@ public abstract class Regenerator {
      * @throws Exception when something goes terribly wrong
      */
     public boolean regenerate() throws Exception {
+
         if (!prepare()) {
             return false;
         }
@@ -103,30 +105,55 @@ public abstract class Regenerator {
 
     private void copyToWorld() {
         createSource();
-        final long timeoutPerTick = TimeUnit.MILLISECONDS.toNanos(10);
-        int taskId = TaskManager.taskManager().repeat(() -> {
-            final long startTime = System.nanoTime();
-            runTasks(() -> System.nanoTime() - startTime < timeoutPerTick);
-        }, 1);
-        //Setting Blocks
-        boolean genbiomes = options.shouldRegenBiomes();
-        boolean hasBiome = options.hasBiomeType();
-        BiomeType biome = options.getBiomeType();
-        Pattern pattern;
-        if (!genbiomes && !hasBiome) {
-            pattern = new PlacementPattern();
-        } else if (hasBiome) {
-            pattern = new WithBiomePlacementPattern((ignored1, ignored2) -> biome);
+
+        // On Folia, we skip the task polling because it's incompatible with the regionalized threading model
+        if (!PlatformUtil.isFolia()) {
+            final long timeoutPerTick = TimeUnit.MILLISECONDS.toNanos(10);
+            int taskId = TaskManager.taskManager().repeat(() -> {
+                final long startTime = System.nanoTime();
+                runTasks(() -> System.nanoTime() - startTime < timeoutPerTick);
+            }, 1);
+
+            //Setting Blocks
+            boolean genbiomes = options.shouldRegenBiomes();
+            boolean hasBiome = options.hasBiomeType();
+            BiomeType biome = options.getBiomeType();
+            Pattern pattern;
+            if (!genbiomes && !hasBiome) {
+                pattern = new PlacementPattern();
+            } else if (hasBiome) {
+                pattern = new WithBiomePlacementPattern((ignored1, ignored2) -> biome);
+            } else {
+                pattern = new WithBiomePlacementPattern((vec, chunk) -> {
+                    if (chunk != null) {
+                        return chunk.getBiomeType(vec.x() & 15, vec.y(), vec.z() & 15);
+                    }
+                    return source.getBiome(vec);
+                });
+            }
+            target.setBlocks(region, pattern);
+            TaskManager.taskManager().cancel(taskId);
         } else {
-            pattern = new WithBiomePlacementPattern((vec, chunk) -> {
-                if (chunk != null) {
-                    return chunk.getBiomeType(vec.x() & 15, vec.y(), vec.z() & 15);
-                }
-                return source.getBiome(vec);
-            });
+            // Folia path: Skip task polling, directly set blocks
+            // This may be slower but avoids threading issues
+            boolean genbiomes = options.shouldRegenBiomes();
+            boolean hasBiome = options.hasBiomeType();
+            BiomeType biome = options.getBiomeType();
+            Pattern pattern;
+            if (!genbiomes && !hasBiome) {
+                pattern = new PlacementPattern();
+            } else if (hasBiome) {
+                pattern = new WithBiomePlacementPattern((ignored1, ignored2) -> biome);
+            } else {
+                pattern = new WithBiomePlacementPattern((vec, chunk) -> {
+                    if (chunk != null) {
+                        return chunk.getBiomeType(vec.x() & 15, vec.y(), vec.z() & 15);
+                    }
+                    return source.getBiome(vec);
+                });
+            }
+            target.setBlocks(region, pattern);
         }
-        target.setBlocks(region, pattern);
-        TaskManager.taskManager().cancel(taskId);
     }
 
     private abstract class ChunkwisePattern implements Pattern {

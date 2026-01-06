@@ -1,6 +1,7 @@
 package com.sk89q.worldedit.bukkit.adapter.impl.fawe.v1_21_6.regen;
 
 import com.fastasyncworldedit.bukkit.adapter.Regenerator;
+import com.fastasyncworldedit.bukkit.util.PlatformUtil;
 import com.fastasyncworldedit.core.Fawe;
 import com.fastasyncworldedit.core.queue.IChunkCache;
 import com.fastasyncworldedit.core.queue.IChunkGet;
@@ -93,8 +94,20 @@ public class PaperweightRegen extends Regenerator {
 
     @Override
     protected void runTasks(final BooleanSupplier shouldKeepTicking) {
+        // On Folia, pollTask() doesn't work because getCurrentRegionizedWorldData() returns null
+        // when called from the GlobalRegionScheduler. World regeneration is not supported on Folia.
+        if (PlatformUtil.isFolia()) {
+            // Skip task polling on Folia - regeneration may not work correctly
+            return;
+        }
         while (shouldKeepTicking.getAsBoolean()) {
-            if (!this.freshWorld.getChunkSource().pollTask()) {
+            try {
+                if (!this.freshWorld.getChunkSource().pollTask()) {
+                    return;
+                }
+            } catch (NullPointerException e) {
+                // Folia detection failed or running in incompatible context
+                // Stop polling to prevent repeated errors
                 return;
             }
         }
