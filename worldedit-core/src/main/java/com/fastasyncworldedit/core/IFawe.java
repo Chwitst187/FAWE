@@ -62,6 +62,16 @@ public interface IFawe {
         return true;
     }
 
+    /**
+     * Check if the server is running on Folia (a Paper fork with regionized multithreading).
+     * On Folia, traditional main thread checks don't work as expected.
+     *
+     * @return true if running on Folia, false otherwise
+     */
+    default boolean isFolia() {
+        return false;
+    }
+
     FAWEPlatformAdapterImpl getPlatformAdapter();
 
 }

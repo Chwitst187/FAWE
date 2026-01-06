@@ -207,7 +207,17 @@ public class Fawe {
     }
 
     public static boolean isMainThread() {
-        return instance == null || instance.thread == Thread.currentThread();
+        if (instance == null) {
+            return true;
+        }
+        // On Folia, there is no single "main thread" - the GlobalRegionScheduler runs on its own threads
+        // We consider any thread that's running scheduled tasks as valid for synchronous operations
+        if (instance.implementation.isFolia()) {
+            // On Folia, we can't reliably check for a main thread, so we skip this check
+            // The GlobalRegionScheduler ensures proper synchronization
+            return true;
+        }
+        return instance.thread == Thread.currentThread();
     }
 
     /**

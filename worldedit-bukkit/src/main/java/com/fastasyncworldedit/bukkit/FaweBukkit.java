@@ -11,7 +11,10 @@ import com.fastasyncworldedit.bukkit.regions.ResidenceFeature;
 import com.fastasyncworldedit.bukkit.regions.TownyFeature;
 import com.fastasyncworldedit.bukkit.regions.WorldGuardFeature;
 import com.fastasyncworldedit.bukkit.util.BukkitTaskManager;
+import com.fastasyncworldedit.bukkit.util.FoliaTaskManager;
 import com.fastasyncworldedit.bukkit.util.ItemUtil;
+import com.fastasyncworldedit.bukkit.util.PlatformUtil;
+import com.fastasyncworldedit.bukkit.util.PlatformUtil;
 import com.fastasyncworldedit.bukkit.util.image.BukkitImageViewer;
 import com.fastasyncworldedit.core.FAWEPlatformAdapterImpl;
 import com.fastasyncworldedit.core.Fawe;
@@ -172,6 +175,9 @@ public class FaweBukkit implements IFawe, Listener {
      */
     @Override
     public TaskManager getTaskManager() {
+        if (PlatformUtil.isFolia()) {
+            return new FoliaTaskManager(plugin);
+        }
         return new BukkitTaskManager(plugin);
     }
 
@@ -273,6 +279,11 @@ public class FaweBukkit implements IFawe, Listener {
 
     @Override
     public Preloader getPreloader(boolean initialise) {
+        // On Folia, the AsyncPreloader cannot work due to thread restrictions
+        // Chunks must be loaded on the region-owning thread, not async threads
+        if (PlatformUtil.isFolia()) {
+            return null;
+        }
         if (PaperLib.isPaper()) {
             if (preloader == null && initialise) {
                 return preloader = new AsyncPreloader();
@@ -285,6 +296,11 @@ public class FaweBukkit implements IFawe, Listener {
     @Override
     public FAWEPlatformAdapterImpl getPlatformAdapter() {
         return platformAdapter;
+    }
+
+    @Override
+    public boolean isFolia() {
+        return PlatformUtil.isFolia();
     }
 
     private void setupPlotSquared() {

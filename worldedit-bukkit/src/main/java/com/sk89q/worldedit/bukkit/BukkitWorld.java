@@ -19,6 +19,7 @@
 
 package com.sk89q.worldedit.bukkit;
 
+import com.fastasyncworldedit.bukkit.util.PlatformUtil;
 import com.fastasyncworldedit.bukkit.util.WorldUnloadedException;
 import com.fastasyncworldedit.core.Fawe;
 import com.fastasyncworldedit.core.FaweCache;
@@ -375,6 +376,13 @@ public class BukkitWorld extends AbstractWorld {
         //FAWE start
         int X = pt.x() >> 4;
         int Z = pt.z() >> 4;
+        // On Folia, we cannot call getChunkAt from async threads
+        // The chunk loading is handled by the region scheduler when needed
+        if (PlatformUtil.isFolia()) {
+            // On Folia, skip synchronous chunk loading from async threads
+            // Chunks will be loaded automatically when accessed in the correct region
+            return;
+        }
         if (Fawe.isMainThread()) {
             world.getChunkAt(X, Z);
         } else if (PaperLib.isPaper()) {

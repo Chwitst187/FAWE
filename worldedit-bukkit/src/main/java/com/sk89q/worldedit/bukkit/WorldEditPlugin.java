@@ -457,7 +457,20 @@ public class WorldEditPlugin extends JavaPlugin {
         if (config != null) {
             config.unload();
         }
-        this.getServer().getScheduler().cancelTasks(this);
+        // Check if running on Folia before trying to cancel tasks
+        try {
+            if (!com.fastasyncworldedit.bukkit.util.PlatformUtil.isFolia()) {
+                this.getServer().getScheduler().cancelTasks(this);
+            }
+            // On Folia, tasks are cancelled automatically when the plugin is disabled
+        } catch (Throwable e) {
+            // Fallback: try the old way
+            try {
+                this.getServer().getScheduler().cancelTasks(this);
+            } catch (UnsupportedOperationException ignored) {
+                // Running on Folia, which doesn't support this operation
+            }
+        }
     }
 
     /**

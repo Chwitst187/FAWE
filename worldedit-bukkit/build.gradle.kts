@@ -2,6 +2,7 @@ import buildlogic.sourceSets
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import io.papermc.paperweight.userdev.attribute.Obfuscation
 import me.modmuss50.mpp.ReleaseType
+import org.gradle.api.plugins.JavaPluginExtension
 
 plugins {
     `java-library`
@@ -157,7 +158,9 @@ tasks.named<Copy>("processResources") {
 tasks.register<ShadowJar>("reobfShadowJar") {
     // The `fawe.properties` file from `worldedit-core` is not automatically
     // included, so we explicitly add the `worldedit-core` source set output.
-    from(project(":worldedit-core").sourceSets.main.get().output)
+    from(provider {
+        project(":worldedit-core").extensions.getByType<JavaPluginExtension>().sourceSets.named("main").get().output
+    })
     archiveFileName.set("${rootProject.name}-Bukkit-${project.version}.${archiveExtension.getOrElse("jar")}")
     configurations = listOf(
         project.configurations.runtimeClasspath.get(), // as is done by shadow for the default shadowJar
