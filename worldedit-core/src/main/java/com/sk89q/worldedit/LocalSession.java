@@ -470,14 +470,10 @@ public class LocalSession implements TextureHolder {
 
     private ChangeSet getChangeSet(Object o) {
         if (o instanceof ChangeSet) {
-            ChangeSet cs = (ChangeSet) o;
-            try {
-                cs.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-                return null;
-            }
-            return cs;
+            // If we already have a ChangeSet in memory, return it directly. Do NOT close it here —
+            // callers expect an open ChangeSet that can be iterated/applied. Closing it would
+            // make it unusable and cause undos to be incomplete.
+            return (ChangeSet) o;
         }
         if (o instanceof Integer) {
             File folder = MainUtil.getFile(
@@ -628,6 +624,14 @@ public class LocalSession implements TextureHolder {
         loadSessionHistoryFromDisk(actor.getUniqueId(), world);
         if (getHistoryNegativeIndex() < history.size()) {
             ChangeSet changeSet = getChangeSet(history.get(getHistoryIndex()));
+            if (changeSet == null) {
+                int size = history.size();
+                if (getHistoryNegativeIndex() != size) {
+                    historyNegativeIndex = history.size();
+                    setDirty();
+                }
+                return null;
+            }
             EditSessionBuilder builder = WorldEdit.getInstance().newEditSessionBuilder().world(world)
                     .checkMemory(false)
                     .changeSetNull()
@@ -640,11 +644,20 @@ public class LocalSession implements TextureHolder {
             if (!actor.getLimit().RESTRICT_HISTORY_TO_REGIONS) {
                 builder = builder.allowedRegionsEverywhere();
             }
-            try (EditSession newEditSession = builder.build()) {
+            EditSession newEditSession = null;
+            try {
+                newEditSession = builder.build();
                 newEditSession.setBlocks(changeSet, ChangeSetExecutor.Type.UNDO);
                 setDirty();
                 historyNegativeIndex++;
                 return newEditSession;
+            } catch (Throwable t) {
+                // Ensure we don't leak resources
+                if (newEditSession != null) {
+                    newEditSession.close();
+                }
+                WorldEdit.logger.error("Error while applying undo", t);
+                return null;
             }
         } else {
             int size = history.size();
@@ -676,6 +689,9 @@ public class LocalSession implements TextureHolder {
             setDirty();
             historyNegativeIndex--;
             ChangeSet changeSet = getChangeSet(history.get(getHistoryIndex()));
+            if (changeSet == null) {
+                return null;
+            }
             EditSessionBuilder builder = WorldEdit.getInstance().newEditSessionBuilder().world(world)
                     .checkMemory(false)
                     .changeSetNull()
@@ -688,9 +704,17 @@ public class LocalSession implements TextureHolder {
             if (!actor.getLimit().RESTRICT_HISTORY_TO_REGIONS) {
                 builder = builder.allowedRegionsEverywhere();
             }
-            try (EditSession newEditSession = builder.build()) {
+            EditSession newEditSession = null;
+            try {
+                newEditSession = builder.build();
                 newEditSession.setBlocks(changeSet, ChangeSetExecutor.Type.REDO);
                 return newEditSession;
+            } catch (Throwable t) {
+                if (newEditSession != null) {
+                    newEditSession.close();
+                }
+                WorldEdit.logger.error("Error while applying redo", t);
+                return null;
             }
         }
         //FAWE end

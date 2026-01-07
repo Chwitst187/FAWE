@@ -22,6 +22,7 @@ package com.sk89q.worldedit.function.operation;
 import com.fastasyncworldedit.core.configuration.Settings;
 import com.fastasyncworldedit.core.history.changeset.AbstractChangeSet;
 import com.fastasyncworldedit.core.history.changeset.ChangeExchangeCoordinator;
+import com.sk89q.worldedit.WorldEdit;
 import com.sk89q.worldedit.WorldEditException;
 import com.sk89q.worldedit.extent.inventory.BlockBag;
 import com.sk89q.worldedit.history.UndoContext;
@@ -99,26 +100,33 @@ public class ChangeSetExecutor implements Operation {
     public Operation resume(RunContext run) throws WorldEditException {
         // FAWE start - ChangeExchangeCoordinator
         if (this.changeExchangeCoordinator != null) {
+            int applied = 0;
             try (this.changeExchangeCoordinator) {
                 Change[] changes = new Change[Settings.settings().EXPERIMENTAL.UNDO_BATCH_SIZE];
                 while ((changes = this.changeExchangeCoordinator.take(changes)) != null) {
                     for (final Change change : changes) {
                         if (change == null) {
+                            WorldEdit.logger.debug("ChangeSetExecutor applied {} changes (batched) for {}", applied, type);
                             return null; // end
                         }
                         type.perform(change, context);
+                        applied++;
                     }
                 }
+                WorldEdit.logger.debug("ChangeSetExecutor applied {} changes (batched) for {}", applied, type);
                 return null;
             }
         }
         // FAWE end
+        int applied = 0;
         while (iterator.hasNext()) {
             Change change = iterator.next();
             //FAWE start - types > individual history step
             type.perform(change, context);
+            applied++;
             //FAWE end
         }
+        WorldEdit.logger.debug("ChangeSetExecutor applied {} changes for {}", applied, type);
         return null;
     }
 
