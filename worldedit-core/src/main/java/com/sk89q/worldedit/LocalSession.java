@@ -150,6 +150,8 @@ public class LocalSession implements TextureHolder {
     private transient volatile Integer historyNegativeIndex;
     private transient final ReentrantLock historyWriteLock = new ReentrantLock(true);
     private final transient Int2ObjectOpenHashMap<Tool> tools = new Int2ObjectOpenHashMap<>(0);
+    // Controls whether default tools/items are loaded for a session; used by loadDefaults(...)
+    private transient boolean loadDefaultsFlag = true;
     private transient Mask sourceMask;
     private transient TextureUtil texture;
     private transient ResettableExtent transform = null;
@@ -631,6 +633,13 @@ public class LocalSession implements TextureHolder {
                     setDirty();
                 }
                 return null;
+            }
+            // Debug logging: history and changeSet sizes
+            try {
+                WorldEdit.logger.debug("LocalSession.undo: history.size={} getHistoryIndex={} historyNegativeIndex={} changeSet.longSize={} changeSet.size={}",
+                        history.size(), getHistoryIndex(), getHistoryNegativeIndex(), changeSet.longSize(), changeSet.size());
+            } catch (Throwable t) {
+                WorldEdit.logger.debug("LocalSession.undo: unable to log changeSet sizes: {}", t.getMessage());
             }
             EditSessionBuilder builder = WorldEdit.getInstance().newEditSessionBuilder().world(world)
                     .checkMemory(false)
@@ -1264,7 +1273,6 @@ public class LocalSession implements TextureHolder {
         return getTool(item, player);
     }
 
-    private transient boolean loadDefaults = true;
 
     public Tool getTool(BaseItem item, Player player) {
         loadDefaults(player, false);
@@ -1278,8 +1286,8 @@ public class LocalSession implements TextureHolder {
     }
 
     public void loadDefaults(Actor actor, boolean force) {
-        if (loadDefaults || force) {
-            loadDefaults = false;
+        if (loadDefaultsFlag || force) {
+            loadDefaultsFlag = false;
             LocalConfiguration config = WorldEdit.getInstance().getConfiguration();
             ParserContext context = new ParserContext();
             context.setActor(actor);
