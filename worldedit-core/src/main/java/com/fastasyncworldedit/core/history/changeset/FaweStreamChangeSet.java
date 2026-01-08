@@ -456,10 +456,32 @@ public abstract class FaweStreamChangeSet extends AbstractChangeSet {
                     change.x = posDel.readX(is) + originX;
                     change.y = posDel.readY(is);
                     change.z = posDel.readZ(is) + originZ;
+
+                    // Sanity check der gelesenen Koordinaten: wenn völlig außerhalb plausibler Bereiche,
+                    // abbrechen und stream schließen (verhindert cascading corruption)
+                    int relX = Math.abs(change.x - originX);
+                    int relZ = Math.abs(change.z - originZ);
+                    if (relX > (1 << 20) || relZ > (1 << 20) || change.y < minY - 1024 || change.y > minY + (1 << 20)) {
+                        int remaining = -1;
+                        try { remaining = is.available(); } catch (Exception ignored) {}
+                        System.err.printf("Invalid coordinates read from history stream: mode=%d version=%d origin=(%d,%d) read=(%d,%d,%d) remaining=%d%n",
+                                mode, version, originX, originZ, change.x, change.y, change.z, remaining);
+                        try {
+                            is.close();
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                        return null;
+                    }
+
                     idDel.readCombined(is, change, dir);
                     return change;
                 } catch (EOFException ignored) {
                 } catch (Exception e) {
+                    int remaining = -1;
+                    try { remaining = is.available(); } catch (Exception ignored) {}
+                    System.err.printf("Error reading block stream: mode=%d version=%d origin=(%d,%d) remaining=%d exception=%s%n",
+                            mode, version, originX, originZ, remaining, e.toString());
                     e.printStackTrace();
                 }
                 try {
@@ -574,10 +596,31 @@ public abstract class FaweStreamChangeSet extends AbstractChangeSet {
                     change.x = posDel.readX(is) + originX;
                     change.y = posDel.readY(is);
                     change.z = posDel.readZ(is) + originZ;
+
+                    // Sanity check wie bei block iterator
+                    int relX = Math.abs(change.x - originX);
+                    int relZ = Math.abs(change.z - originZ);
+                    if (relX > (1 << 20) || relZ > (1 << 20) || change.y < minY - 1024 || change.y > minY + (1 << 20)) {
+                        int remaining = -1;
+                        try { remaining = is.available(); } catch (Exception ignored) {}
+                        System.err.printf("Invalid coordinates read from history stream (full block): mode=%d version=%d origin=(%d,%d) read=(%d,%d,%d) remaining=%d%n",
+                                mode, version, originX, originZ, change.x, change.y, change.z, remaining);
+                        try {
+                            is.close();
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                        return null;
+                    }
+
                     idDel.readCombined(is, change);
                     return change;
                 } catch (EOFException ignored) {
                 } catch (Exception e) {
+                    int remaining = -1;
+                    try { remaining = is.available(); } catch (Exception ignored) {}
+                    System.err.printf("Error reading full-block stream: mode=%d version=%d origin=(%d,%d) remaining=%d exception=%s%n",
+                            mode, version, originX, originZ, remaining, e.toString());
                     e.printStackTrace();
                 }
                 try {
@@ -719,11 +762,21 @@ public abstract class FaweStreamChangeSet extends AbstractChangeSet {
 
     private ChangeExchangeCoordinator coordinatedChanges(final BlockBag blockBag, final int mode, boolean dir) throws IOException {
         close();
-        var tileCreate = tileChangePopulator(getTileCreateIS(), true);
-        var tileRemove = tileChangePopulator(getTileRemoveIS(), false);
+        // When dir=true (redo): create=true, remove=false
+        // When dir=false (undo): create=false, remove=true (swap streams and flags)
+        var tileCreate = dir
+            ? tileChangePopulator(getTileCreateIS(), true)
+            : tileChangePopulator(getTileRemoveIS(), false);
+        var tileRemove = dir
+            ? tileChangePopulator(getTileRemoveIS(), false)
+            : tileChangePopulator(getTileCreateIS(), true);
 
-        var entityCreate = entityChangePopulator(getEntityCreateIS(), true);
-        var entityRemove = entityChangePopulator(getEntityRemoveIS(), false);
+        var entityCreate = dir
+            ? entityChangePopulator(getEntityCreateIS(), true)
+            : entityChangePopulator(getEntityRemoveIS(), false);
+        var entityRemove = dir
+            ? entityChangePopulator(getEntityRemoveIS(), false)
+            : entityChangePopulator(getEntityCreateIS(), true);
 
         var blockChange = blockBag != null && mode > 0 ? fullBlockChangePopulator(blockBag, mode, dir) : blockChangePopulator(dir);
 
@@ -762,7 +815,11 @@ public abstract class FaweStreamChangeSet extends AbstractChangeSet {
                     populators.remove();
                     populator = populators.peek();
                     if (populator == null) {
-                        changes[i] = null; // mark end
+                        // mark end and ensure remaining slots are cleared to avoid stale values
+                        changes[i] = null;
+                        for (int j = i + 1; j < changes.length; j++) {
+                            changes[j] = null;
+                        }
                         return true; // still needs to consume the elements of the current round
                     }
                 } else {
@@ -877,10 +934,31 @@ public abstract class FaweStreamChangeSet extends AbstractChangeSet {
                     change.x = posDel.readX(is) + originX;
                     change.y = posDel.readY(is);
                     change.z = posDel.readZ(is) + originZ;
+
+                    // Sanity check wie bei block iterator
+                    int relX = Math.abs(change.x - originX);
+                    int relZ = Math.abs(change.z - originZ);
+                    if (relX > (1 << 20) || relZ > (1 << 20) || change.y < minY - 1024 || change.y > minY + (1 << 20)) {
+                        int remaining = -1;
+                        try { remaining = is.available(); } catch (Exception ignored) {}
+                        System.err.printf("Invalid coordinates read from history stream (full block): mode=%d version=%d origin=(%d,%d) read=(%d,%d,%d) remaining=%d%n",
+                                mode, version, originX, originZ, change.x, change.y, change.z, remaining);
+                        try {
+                            is.close();
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                        return null;
+                    }
+
                     idDel.readCombined(is, change);
                     return change;
                 } catch (EOFException ignored) {
                 } catch (Exception e) {
+                    int remaining = -1;
+                    try { remaining = is.available(); } catch (Exception ignored) {}
+                    System.err.printf("Error reading full-block stream: mode=%d version=%d origin=(%d,%d) remaining=%d exception=%s%n",
+                            mode, version, originX, originZ, remaining, e.toString());
                     e.printStackTrace();
                 }
                 try {
@@ -919,10 +997,31 @@ public abstract class FaweStreamChangeSet extends AbstractChangeSet {
                     change.x = posDel.readX(is) + originX;
                     change.y = posDel.readY(is);
                     change.z = posDel.readZ(is) + originZ;
+
+                    // Sanity check der Koordinaten
+                    int relX = Math.abs(change.x - originX);
+                    int relZ = Math.abs(change.z - originZ);
+                    if (relX > (1 << 20) || relZ > (1 << 20) || change.y < minY - 1024 || change.y > minY + (1 << 20)) {
+                        int remaining = -1;
+                        try { remaining = is.available(); } catch (Exception ignored) {}
+                        System.err.printf("Invalid coordinates read from history stream (block populator): mode=%d version=%d origin=(%d,%d) read=(%d,%d,%d) remaining=%d%n",
+                                mode, version, originX, originZ, change.x, change.y, change.z, remaining);
+                        try {
+                            is.close();
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                        return null;
+                    }
+
                     idDel.readCombined(is, change, dir);
                     return change;
                 } catch (EOFException ignored) {
                 } catch (Exception e) {
+                    int remaining = -1;
+                    try { remaining = is.available(); } catch (Exception ignored) {}
+                    System.err.printf("Error reading block populator stream: mode=%d version=%d origin=(%d,%d) remaining=%d exception=%s%n",
+                            mode, version, originX, originZ, remaining, e.toString());
                     e.printStackTrace();
                 }
                 try {
@@ -992,11 +1091,21 @@ public abstract class FaweStreamChangeSet extends AbstractChangeSet {
     public Iterator<Change> getIterator(final boolean dir) {
         try {
             close();
-            final Iterator<MutableTileChange> tileCreate = getTileIterator(getTileCreateIS(), true);
-            final Iterator<MutableTileChange> tileRemove = getTileIterator(getTileRemoveIS(), false);
+            // When dir=true (redo): create=true, remove=false
+            // When dir=false (undo): create=false, remove=true (swap streams and flags)
+            final Iterator<MutableTileChange> tileCreate = dir
+                ? getTileIterator(getTileCreateIS(), true)
+                : getTileIterator(getTileRemoveIS(), false);
+            final Iterator<MutableTileChange> tileRemove = dir
+                ? getTileIterator(getTileRemoveIS(), false)
+                : getTileIterator(getTileCreateIS(), true);
 
-            final Iterator<MutableEntityChange> entityCreate = getEntityIterator(getEntityCreateIS(), true);
-            final Iterator<MutableEntityChange> entityRemove = getEntityIterator(getEntityRemoveIS(), false);
+            final Iterator<MutableEntityChange> entityCreate = dir
+                ? getEntityIterator(getEntityCreateIS(), true)
+                : getEntityIterator(getEntityRemoveIS(), false);
+            final Iterator<MutableEntityChange> entityRemove = dir
+                ? getEntityIterator(getEntityRemoveIS(), false)
+                : getEntityIterator(getEntityCreateIS(), true);
 
             final Iterator<MutableBlockChange> blockChange = getBlockIterator(dir);
 

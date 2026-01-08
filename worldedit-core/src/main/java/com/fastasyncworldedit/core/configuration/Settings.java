@@ -670,7 +670,8 @@ public class Settings extends Config {
                 " - The size defines the number of changes read at once.",
                 " - Larger numbers might reduce overhead but increase latency for edits with only few changes.",
                 " - 0 means undo operations are not batched."})
-        public int UNDO_BATCH_SIZE = 128;
+        // Set to 0 to disable batching (use iterator path). Temporary for debugging undo issues.
+        public int UNDO_BATCH_SIZE = 0;
 
         @Comment({
                 "[UNSAFE] Directly modify the region files. (OBSOLETE - USE ANVIL COMMANDS)",
